@@ -324,6 +324,8 @@ export function searchResultToSession(result: SessionSearchResult): SessionInfo 
   }
 }
 
+// Merge ranked server hits with local matches, then order every row by the
+// session date that row actually displays.
 export function mergeSearchResults(
   sortedSessions: readonly SessionInfo[],
   query: string,
@@ -335,12 +337,8 @@ export function mergeSearchResults(
     return []
   }
 
-  // While the request is in flight the client's own recency-ordered matches
-  // are all there is — instant feedback while typing, and no leftovers from
-  // whatever the previous query's request returned. Once the ranked server
-  // response lands, it decides the order: the backend runs direct id matches
-  // before FTS content hits, so pasting a session's exact id must keep that
-  // hit on top instead of letting newer quoting sessions bury it.
+  // While a request is in flight only the current query's local matches
+  // render, so no leftovers from the previous query's response show up.
   const out = new Map<string, SessionInfo>()
 
   if (searchPending) {
@@ -362,16 +360,17 @@ export function mergeSearchResults(
     out.set(match.session_id, loaded ?? searchResultToSession(match))
   }
 
-  // Client-only matches that the server didn't return (e.g. cwd/git-branch
-  // fields the FTS index doesn't cover) still deserve a row — after the
-  // ranked hits, in recency order.
+  // Client-only matches the server didn't return (cwd/git-branch fields the
+  // FTS index doesn't cover) still deserve a row.
   for (const s of sortedSessions) {
     if (!out.has(s.id) && sessionMatchesSearch(s, query)) {
       out.set(s.id, s)
     }
   }
 
-  return [...out.values()]
+  // Date order beats the server's match ranking: rows sort by the timestamp
+  // they display (last_active, falling back to started_at).
+  return [...out.values()].sort((a, b) => (b.last_active || b.started_at) - (a.last_active || a.started_at))
 }
 
 interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -1737,6 +1736,7 @@ export function ChatSidebar({
                     </div>
                   )
                 }
+                flat
                 label={s.results}
                 onArchiveSession={onArchiveSession}
                 onBranchSession={onBranchSession}

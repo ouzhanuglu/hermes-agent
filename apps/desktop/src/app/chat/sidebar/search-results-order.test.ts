@@ -1,9 +1,5 @@
-// Regression: pasting a session's exact id into the sidebar search buried the
-// id's own row under recency-sorted client matches. Cross-reference workflows
-// open sessions with a pointer line quoting another session's id, and the
-// sidebar preview is built from that first message — so those sessions match
-// the query client-side forever, while the backend ranks exact id matches
-// first and the sidebar dropped that ranking at the merge.
+// Sidebar search results render in session-date order, independent of the
+// server's match ranking (id hits first, then FTS content).
 import { describe, expect, it } from 'vitest'
 
 import { makeSessionInfo } from '@/test/session-info'
@@ -42,9 +38,8 @@ const idHit: SessionSearchResult = {
 const indexByAnyId = (sessions: SessionInfo[]) => new Map(sessions.map(session => [session.id, session]))
 
 describe('mergeSearchResults', () => {
-  it('keeps the exact-id server hit above newer client matches once the response lands', () => {
-    // The quoting session is more recent and matches the pasted id through its
-    // preview; the backend still ranks the id's own conversation first.
+  // The server sends the id hit first; the rendered order still follows dates.
+  it('sorts server and client matches newest first once the response lands', () => {
     const merged = mergeSearchResults(
       [quotingSession, targetSession],
       TARGET_ID,
@@ -53,7 +48,7 @@ describe('mergeSearchResults', () => {
       false
     )
 
-    expect(merged.map(session => session.id)).toEqual([TARGET_ID, quotingSession.id])
+    expect(merged.map(session => session.id)).toEqual([quotingSession.id, TARGET_ID])
   })
 
   it('leads client matches while the server request is still in flight', () => {
@@ -86,7 +81,8 @@ describe('mergeSearchResults', () => {
     expect(merged.map(session => session.id)).toEqual([quotingSession.id])
   })
 
-  it('keeps a loaded conversation at its server rank, not its recency slot', () => {
+  // A loaded row keeps its richer object but takes its date-ordered slot.
+  it('keeps the loaded conversation object at its recency slot', () => {
     const merged = mergeSearchResults(
       [quotingSession, targetSession],
       TARGET_ID,
@@ -95,10 +91,17 @@ describe('mergeSearchResults', () => {
       false
     )
 
-    // The loaded row object renders (richer than the mapped hit), but the
-    // server's position decides where.
-    expect(merged.map(session => session.id)).toEqual([TARGET_ID, quotingSession.id])
-    expect(merged[0]).toBe(targetSession)
+    // The loaded object wins over the mapped hit; the position is the date's.
+    expect(merged.map(session => session.id)).toEqual([quotingSession.id, TARGET_ID])
+    expect(merged[1]).toBe(targetSession)
+  })
+
+  // Unloaded server hits sort among themselves by last activity too.
+  it('sorts unloaded server hits by last activity with start time fallback', () => {
+    const newerHit: SessionSearchResult = { ...idHit, session_id: 'newer', last_active: null, session_started: 2_000 }
+    const merged = mergeSearchResults([], 'query', [idHit, newerHit], new Map(), false)
+
+    expect(merged.map(session => session.id)).toEqual(['newer', TARGET_ID])
   })
 
   it('maps an unloaded server hit with the backend last_active, not its start time', () => {

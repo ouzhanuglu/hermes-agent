@@ -13,6 +13,12 @@ export interface FlattenSessionsOptions {
    * their parent; sibling branches stay ordered by their own recency.
    */
   preserveOrder?: boolean
+  /**
+   * Emit the caller's order as-is, without nesting branch children under
+   * their parent. Use where that order is the contract (search results sorted
+   * by session date) and re-parenting would silently reshuffle rows.
+   */
+  flat?: boolean
 }
 
 const recency = (session: SessionInfo): number => session.last_active || session.started_at || 0
@@ -88,6 +94,11 @@ export function flattenSessionsWithBranches(
   options: FlattenSessionsOptions = {}
 ): SidebarSessionEntry[] {
   const sessions = collapseCompressionLineages(input)
+
+  // Flat mode: no nesting pass, so rows come back in the caller's order.
+  if (options.flat) {
+    return sessions.map(session => ({ session }))
+  }
 
   if (sessions.length < 2) {
     return sessions.map(session => ({ session }))

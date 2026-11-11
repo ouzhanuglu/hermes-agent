@@ -153,6 +153,25 @@ describe('flattenSessionsWithBranches', () => {
     ])
   })
 
+  // Search results arrive flat: a matched branch keeps its slot instead of
+  // being re-parented under its (older) parent session.
+  it('flat mode keeps the given order even when a branch has its parent in the list', () => {
+    const child = fork('child', 'parent', { last_active: 300 })
+    const unrelated = session('unrelated', { last_active: 200 })
+    const parent = session('parent', { last_active: 100 })
+
+    expect(
+      flattenSessionsWithBranches([child, unrelated, parent], { flat: true, preserveOrder: true }).map(e => ({
+        id: e.session.id,
+        stem: e.branchStem
+      }))
+    ).toEqual([
+      { id: 'child', stem: undefined },
+      { id: 'unrelated', stem: undefined },
+      { id: 'parent', stem: undefined }
+    ])
+  })
+
   it('renders /new and idle/daily resets as siblings, not nested branches', () => {
     const first = session('first', { last_active: 10 })
     const second = reset('second', 'first', { last_active: 20 })
